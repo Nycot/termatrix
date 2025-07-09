@@ -87,3 +87,50 @@ except Exception as e:
     print(f"Erreur lors du login SSO : {e}")
 finally:
     driver.quit()
+
+
+
+import requests
+from bs4 import BeautifulSoup
+
+session = requests.Session()
+
+# 1. Accès à la ressource protégée sur le SP
+sp_url = "https://service-protected.example.com"
+response = session.get(sp_url)
+
+# 2. Extraire le formulaire SAML de redirection vers l’IdP
+soup = BeautifulSoup(response.text, "html.parser")
+form = soup.find("form")
+saml_action = form["action"]
+inputs = {i["name"]: i["value"] for i in form.find_all("input")}
+
+# 3. Envoi de la requête SAML vers l’IdP
+response = session.post(saml_action, data=inputs)
+
+# 4. Simuler la soumission du formulaire d’authentification de l’IdP
+soup = BeautifulSoup(response.text, "html.parser")
+login_form = soup.find("form")
+login_url = login_form["action"]
+login_data = {
+    i["name"]: i.get("value", "") for i in login_form.find_all("input")
+}
+login_data["username"] = "mon_identifiant"
+login_data["password"] = "mon_mot_de_passe"
+
+response = session.post(login_url, data=login_data)
+
+# 5. Récupération du formulaire SAMLResponse
+soup = BeautifulSoup(response.text, "html.parser")
+saml_form = soup.find("form")
+saml_post_url = saml_form["action"]
+saml_response_data = {
+    i["name"]: i["value"] for i in saml_form.find_all("input")
+}
+
+# 6. Envoi de la réponse SAML au SP
+response = session.post(saml_post_url, data=saml_response_data)
+
+# 7. Si tout est correct, tu es maintenant connecté
+print("Statut final :", response.status_code)
+print("Page protégée :", response.url)
