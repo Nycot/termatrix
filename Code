@@ -26,3 +26,64 @@ cookies = driver.get_cookies()
 print(cookies)
 
 driver.quit()
+
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+
+# --- CONFIGURATION ---
+URL_LOGIN = "https://sso.ton-entreprise.com/login"
+IDENTIFIANT = "mon_identifiant"
+MOT_DE_PASSE = "mon_mot_de_passe"
+
+# --- OPTIONS CHROME ---
+options = webdriver.ChromeOptions()
+options.add_argument('--headless')  # Mode sans affichage
+options.add_argument('--disable-gpu')
+options.add_argument('--no-sandbox')
+options.add_argument('--ignore-certificate-errors')  # Si certificat SSL interne
+options.add_argument('--window-size=1920,1080')
+
+# --- INITIALISATION ---
+driver = webdriver.Chrome(options=options)
+
+try:
+    # Accès à la page de login
+    driver.get(URL_LOGIN)
+
+    # Attente explicite que les champs soient visibles
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "username")))
+
+    # Remplir les champs
+    username_input = driver.find_element(By.NAME, "username")
+    password_input = driver.find_element(By.NAME, "password")
+
+    username_input.send_keys(IDENTIFIANT)
+    password_input.send_keys(MOT_DE_PASSE)
+    password_input.send_keys(Keys.RETURN)
+
+    # Attendre la redirection ou une page d'accueil
+    WebDriverWait(driver, 15).until(EC.url_changes(URL_LOGIN))
+
+    # Pause courte pour laisser le temps au cookie d'être posé
+    time.sleep(2)
+
+    # Récupération des cookies
+    cookies = driver.get_cookies()
+    for cookie in cookies:
+        print(f"{cookie['name']} = {cookie['value']}")
+
+    # (Optionnel) Utiliser le cookie avec requests ?
+    # session = requests.Session()
+    # for cookie in cookies:
+    #     session.cookies.set(cookie['name'], cookie['value'])
+
+except Exception as e:
+    print(f"Erreur lors du login SSO : {e}")
+finally:
+    driver.quit()
