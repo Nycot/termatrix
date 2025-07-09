@@ -1,0 +1,28 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+
+# Configure le navigateur headless
+options = webdriver.ChromeOptions()
+options.add_argument('--headless')
+driver = webdriver.Chrome(options=options)
+
+# Va sur le portail SSO
+driver.get("https://sso.ton-entreprise.com/login")
+
+# Remplis les champs
+username_input = driver.find_element(By.NAME, "username")
+password_input = driver.find_element(By.NAME, "password")
+
+username_input.send_keys("ton_identifiant")
+password_input.send_keys("ton_mot_de_passe")
+password_input.send_keys(Keys.RETURN)
+
+# Attends la redirection vers la page protégée
+driver.implicitly_wait(10)
+
+# Récupère le cookie de session ou token
+cookies = driver.get_cookies()
+print(cookies)
+
+driver.quit()
