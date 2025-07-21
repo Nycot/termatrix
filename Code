@@ -134,3 +134,47 @@ response = session.post(saml_post_url, data=saml_response_data)
 # 7. Si tout est correct, tu es maintenant connecté
 print("Statut final :", response.status_code)
 print("Page protégée :", response.url)
+
+
+
+
+import requests
+from bs4 import BeautifulSoup
+
+session = requests.Session()
+
+# 1. Accès initial au SP (ou ressource protégée)
+initial_url = "https://service.example.com"
+r1 = session.get(initial_url)
+
+# 2. Le SP redirige vers Keycloak avec un formulaire SAMLRequest
+soup = BeautifulSoup(r1.text, 'html.parser')
+form = soup.find('form')
+action_url = form['action']
+data = {i['name']: i['value'] for i in form.find_all('input')}
+
+# 3. Soumission de la requête SAMLRequest à Keycloak
+r2 = session.post(action_url, data=data)
+
+# 4. Keycloak affiche le formulaire de login
+soup2 = BeautifulSoup(r2.text, 'html.parser')
+login_url = soup2.find('form')['action']
+login_inputs = {i['name']: i.get('value', '') for i in soup2.find_all('input')}
+login_inputs['username'] = "mon_utilisateur"
+login_inputs['password'] = "mon_mot_de_passe"
+
+# 5. Envoie les identifiants
+r3 = session.post(login_url, data=login_inputs)
+
+# 6. Keycloak poste la SAMLResponse vers le SP
+soup3 = BeautifulSoup(r3.text, 'html.parser')
+final_form = soup3.find('form')
+final_action = final_form['action']
+final_inputs = {i['name']: i['value'] for i in final_form.find_all('input')}
+
+# 7. Envoie de la SAMLResponse au SP
+r4 = session.post(final_action, data=final_inputs)
+
+# 8. Tu es connecté 🎉
+print("Statut final :", r4.status_code)
+print("Contenu de la page :", r4.text[:500])
