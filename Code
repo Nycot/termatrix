@@ -4,15 +4,16 @@ import base64
 import xml.etree.ElementTree as ET
 import urllib3
 
-# Désactiver les warnings SSL (car verify=False)
+# === CONFIGURATION ===
+SP_URL = "https://ton-sp.example.com/"      # URL protégée par SAML (le Service Provider)
+USERNAME = "alice"                          # Identifiant Keycloak
+PASSWORD = "mot_de_passe"                   # Mot de passe Keycloak
+TARGET_ATTR = "username"                    # Attribut à utiliser comme identifiant (ex: "email")
+
+# === DÉSACTIVATION DES ALERTES SSL ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# === CONFIGURATION ===
-SP_URL = "https://ton-sp.example.com/"          # URL protégée par SAML (SP)
-USERNAME = "alice"                              # Nom d'utilisateur Keycloak
-PASSWORD = "mot_de_passe"                       # Mot de passe Keycloak
-
-# === DÉMARRAGE ===
+# === SESSION HTTP ===
 session = requests.Session()
 
 print("🔐 Accès initial à la ressource protégée...")
@@ -47,39 +48,64 @@ form3 = soup3.find('form')
 if not form3:
     raise RuntimeError("❌ Aucun formulaire SAMLResponse trouvé (étape 3)")
 
+# Si Keycloak renvoie une page "Continue", on la traite
+if not form3.find('input', {'name': 'SAMLResponse'}):
+    print("⏳ Formulaire intermédiaire détecté (probablement 'Continue')...")
+    action_inter = form3.get('action')
+    data_inter = {i.get('name'): i.get('value', '') for i in form3.find_all('input') if i.get('name')}
+    r3b = session.post(action_inter, data=data_inter, verify=False)
+    soup3 = BeautifulSoup(r3b.text, 'html.parser')
+    form3 = soup3.find('form')
+
+if not form3:
+    raise RuntimeError("❌ Toujours aucun formulaire final avec SAMLResponse trouvé.")
+
 final_action = form3.get('action')
 final_inputs = {
     i.get('name'): i.get('value', '') for i in form3.find_all('input') if i.get('name')
 }
 
-# Vérifie présence de SAMLResponse
 if 'SAMLResponse' not in final_inputs:
-    raise RuntimeError("❌ Champ SAMLResponse manquant. Authentification échouée.")
+    print("\n🧾 Formulaire HTML reçu :")
+    print(form3.prettify()[:2000])
+    raise RuntimeError("❌ Champ SAMLResponse manquant. Authentification incomplète.")
 
-print("\n✅ Champs extraits pour POST vers le SP :")
+print("\n✅ Champs extraits pour POST final au SP :")
 for k, v in final_inputs.items():
     print(f"{k} = {v[:80]}{'...' if len(v) > 80 else ''}")
 
-# 7. Envoi de la SAMLResponse au SP (connexion finale)
+# Envoi de la réponse SAML au SP
 print("📤 Envoi de la réponse SAML au SP...")
 r4 = session.post(final_action, data=final_inputs, verify=False)
 
 print("\n✅ Réponse finale du SP :", r4.status_code)
-print(r4.text[:500])  # Affiche début de la page protégée
+print(r4.text[:500])
 
-# === EXTRACTION DU MELLON_USER (depuis la SAMLResponse) ===
-print("\n🔎 Extraction du MELLON_USER depuis la SAMLResponse...")
+# === DÉCODAGE SAMLResponse ET EXTRACTION D'ATTRIBUTS ===
+print("\n🔎 Décodage et analyse de la SAMLResponse...")
+
 saml_xml = base64.b64decode(final_inputs['SAMLResponse'])
 root = ET.fromstring(saml_xml)
-
 ns = {'saml2': 'urn:oasis:names:tc:SAML:2.0:assertion'}
-nameid = root.find('.//saml2:Subject/saml2:NameID', ns)
-print("👤 MELLON_USER :", nameid.text if nameid is not None else "Non trouvé")
 
-# Optionnel : extraction des attributs SAML
-print("\n📦 Attributs SAML envoyés par Keycloak :")
+# Affiche tous les attributs
+print("\n📦 Attributs SAML disponibles :")
 for attr in root.findall('.//saml2:AttributeStatement/saml2:Attribute', ns):
-    attr_name = attr.attrib.get('Name', 'inconnu')
-    values = [v.text for v in attr.findall('saml2:AttributeValue', ns)]
-    for val in values:
-        print(f"- {attr_name} = {val}")
+    name = attr.attrib.get("Name", "(inconnu)")
+    value = attr.find('saml2:AttributeValue', ns)
+    if value is not None:
+        print(f"- {name} = {value.text}")
+
+# Extraction du MELLON_USER à partir de l'attribut choisi
+print("\n👤 Extraction du MELLON_USER depuis l'attribut SAML choisi...")
+found = False
+for attr in root.findall('.//saml2:AttributeStatement/saml2:Attribute', ns):
+    name = attr.attrib.get("Name", "")
+    if name == TARGET_ATTR:
+        value = attr.find('saml2:AttributeValue', ns)
+        if value is not None:
+            print(f"👤 MELLON_USER (via attribut '{TARGET_ATTR}') :", value.text)
+            found = True
+
+if not found:
+    print(f"❌ Attribut '{TARGET_ATTR}' non trouvé dans la réponse SAML.")
